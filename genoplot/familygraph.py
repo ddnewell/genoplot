@@ -6,16 +6,24 @@
 # into with Welded Anvil Technologies (David D. Newell).
 # @author david@newell.at
 
-import logging, pygraphviz, time, itertools, sys, traceback
+import itertools
+import logging
+import sys
+import time
+import traceback
+
 import networkx as nx
+import pygraphviz
+
+from . import buchheim
 from .family import Family
 from .pedigree import Pedigree
-from . import buchheim
 from .utils import calculate_text_size
+
 logger = logging.getLogger("genoplot")
 
 
-class Branch(object):
+class Branch:
     def __init__(self, id, subgraph, parent, font_size, hmargin=10, node_height=50):
         """
         Branch - defines a branch within the family graph
@@ -33,8 +41,8 @@ class Branch(object):
         self.font_size = font_size
         self._extremes = [None]*4
 
-        for node in self._graph.nodes_iter():
-            self._graph.node[node]["el"].layout_branch = id
+        for node in self._graph.nodes():
+            self._graph.nodes[node]["el"].layout_branch = id
 
     def __len__(self):
         return len(self._graph)
@@ -73,13 +81,15 @@ class Branch(object):
         if not self._extremes[2] == 0:
             dy = -self._extremes[2]
         if dx == 0 and dy == 0:
-            logger.debug("<Branch %i> Extremes after initial layout: %s", self.id, self._extremes)
+            logger.debug(f"<Branch {self.id}> Extremes after initial layout: {self._extremes}")
         else:
-            logger.debug("<Branch %i> Extremes after initial layout: %s    dx: %.2f  dy: %.2f", self.id, self._extremes, dx, dy)
+            logger.debug(
+                f"<Branch {self.id}> Extremes after initial layout: {self._extremes}    "
+                f"dx: {dx:.2f}  dy: {dy:.2f}"
+            )
             self._extremes = [None]*4
             for vid, data in self._graph.nodes(data=True):
                 el = data["el"]
-                # logger.debug("<Branch %i> El: %s  Moving (%.1f, %.1f) to (%.1f, %.1f)", self.id, el, el.x, el.y, el.x+dx, el.y+dy)
                 el.x += dx
                 el.y += dy
                 if self._extremes[0] is None or el.x < self._extremes[0]:
@@ -90,7 +100,7 @@ class Branch(object):
                     self._extremes[2] = el.y
                 if self._extremes[3] is None or el.y > self._extremes[3]:
                     self._extremes[3] = el.y
-            logger.debug("<Branch %i> Extremes after adjustment: %s", self.id, self._extremes)
+            logger.debug(f"<Branch {self.id}> Extremes after adjustment: {self._extremes}")
         # Update branch size
         self.width = self._extremes[1] - self._extremes[0]
         self.height = self._extremes[3] - self._extremes[2]
@@ -98,23 +108,26 @@ class Branch(object):
     def layout(self):
         # Get first node
         v = None
-        for vid, deg in self._graph.in_degree().items():
+        for vid, deg in self._graph.in_degree():
             if deg == 0:
                 v = vid
                 break
         if v is None:
-            logger.critical("Could not find parent node to layout branch %i: stopping", self.id)
+            logger.critical(f"Could not find parent node to layout branch {self.id}: stopping")
             exit(1)
 
         post_order = list(nx.dfs_postorder_nodes(self._graph, v))
 
-        logger.debug("<Branch %i> First Element: %s; post-order: %s", self.id, v, post_order)
+        logger.debug(f"<Branch {self.id}> First Element: {v}; post-order: {post_order}")
         heights = self.layout_preprocessing(v)
         self.layout_first_walk(v)
 
         self._extremes = [None]*4
 
-        self.layout_second_walk(v, -self._graph.node[v]["el"].layout_prelim, depth=0, height=self.node_height+max(heights))
+        self.layout_second_walk(
+            v, -self._graph.nodes[v]["el"].layout_prelim, depth=0,
+            height=self.node_height+max(heights)
+        )
 
         # Update coordinates
         dx = dy = 0
@@ -123,13 +136,15 @@ class Branch(object):
         if not self._extremes[2] == 0:
             dy = -self._extremes[2]
         if dx == 0 and dy == 0:
-            logger.debug("<Branch %i> Extremes after initial layout: %s", self.id, self._extremes)
+            logger.debug(f"<Branch {self.id}> Extremes after initial layout: {self._extremes}")
         else:
-            logger.debug("<Branch %i> Extremes after initial layout: %s    dx: %.2f  dy: %.2f", self.id, self._extremes, dx, dy)
+            logger.debug(
+                f"<Branch {self.id}> Extremes after initial layout: {self._extremes}    "
+                f"dx: {dx:.2f}  dy: {dy:.2f}"
+            )
             self._extremes = [None]*4
             for vid, data in self._graph.nodes(data=True):
                 el = data["el"]
-                # logger.debug("<Branch %i> El: %s  Moving (%.1f, %.1f) to (%.1f, %.1f)", self.id, el, el.x, el.y, el.x+dx, el.y+dy)
                 el.x += dx
                 el.y += dy
                 if self._extremes[0] is None or el.x < self._extremes[0]:
@@ -140,24 +155,26 @@ class Branch(object):
                     self._extremes[2] = el.y
                 if self._extremes[3] is None or el.y > self._extremes[3]:
                     self._extremes[3] = el.y
-            logger.debug("<Branch %i> Extremes after adjustment: %s", self.id, self._extremes)
+            logger.debug(f"<Branch {self.id}> Extremes after adjustment: {self._extremes}")
         # Update branch size
         self.width = self._extremes[1] - self._extremes[0]
         self.height = self._extremes[3] - self._extremes[2]
 
     def layout_preprocessing(self, v, prev=None, n=1, lmost_sibling=None, lsibling=None):
-        el = self._graph.node[v]["el"]
+        el = self._graph.nodes[v]["el"]
         el.layout_ancestor = prev
         el.layout_number = n
         el.layout_lmost_sibling = lmost_sibling
         el.layout_lsibling = lsibling
         el.layout_thread = None
         heights = [el.height]
-        self._graph.node[v]["children"] = tuple(sorted(self._graph.edge[v].keys(), key=self._sort_children))
-        # for n, child in enumerate(self._graph.edge[v]):
-        for n, child in enumerate(self._graph.node[v]["children"]):
-            lsibling = self._graph.node[v]["children"][n-1] if n > 0 else None
-            lmost_sibling = self._graph.node[v]["children"][0] if n > 0 else None # TODO: verify that we don't need to set self to left most sibling
+        self._graph.nodes[v]["children"] = tuple(
+            sorted(self._graph[v].keys(), key=self._sort_children)
+        )
+        for n, child in enumerate(self._graph.nodes[v]["children"]):
+            lsibling = self._graph.nodes[v]["children"][n-1] if n > 0 else None
+            # TODO: verify that we don't need to set self to left most sibling
+            lmost_sibling = self._graph.nodes[v]["children"][0] if n > 0 else None
             child_heights = self.layout_preprocessing(child, v, n+1, lmost_sibling, lsibling)
             heights.extend(child_heights)
         return heights
@@ -165,37 +182,44 @@ class Branch(object):
     def _reconcile_birth_date(self, bdate):
         if bdate is None:
             return 0
-        elif type(bdate) is str:
+        elif isinstance(bdate, str):
             return 0
         else:
             return bdate
 
     def _sort_children(self, v):
-        n = self._graph.node[v]
+        n = self._graph.nodes[v]
         if n is None:
-            logger.critical("Node %s does not exist, cannot continue sorting children in layout", v)
+            logger.critical(
+                f"Node {v} does not exist, cannot continue sorting children in layout"
+            )
         in_edges = self._graph.in_edges(v)
         if len(in_edges) == 0:
-            logger.critical("No edges into node %s, cannot continue sorting children in layout", v)
-        parent_el = self._graph.node[in_edges[0][0]]["el"]
+            logger.critical(
+                f"No edges into node {v}, cannot continue sorting children in layout"
+            )
+        parent_el = self._graph.nodes[in_edges[0][0]]["el"]
         tgt = n["el"]
         if tgt is None:
-            logger.error("Could not populate node for ID: %s", v)
+            logger.error(f"Could not populate node for ID: {v}")
             return 0
 
-        if type(tgt) is Family:
+        if isinstance(tgt, Family):
             tgt_father = tgt.father()
             tgt_mother = tgt.mother()
             if tgt_father is None and tgt_mother is None:
-                logger.critical("Empty parents found in family while sorting children; cannot continue, family ID: %i", tgt.id)
+                logger.critical(
+                    f"Empty parents found in family while sorting children; "
+                    f"cannot continue, family ID: {tgt.id}"
+                )
                 exit(1)
 
-            if tgt_father is None and not tgt_mother is None:
+            if tgt_father is None and tgt_mother is not None:
                 return self._reconcile_birth_date(tgt_mother.birth)
-            elif not tgt_father is None and tgt_mother is None:
+            elif tgt_father is not None and tgt_mother is None:
                 return self._reconcile_birth_date(tgt_father.birth)
 
-            if type(parent_el) is Family:
+            if isinstance(parent_el, Family):
                 # Family to family link
                 src_father = parent_el.father()
                 src_mother = parent_el.mother()
@@ -217,74 +241,84 @@ class Branch(object):
         return 0
 
     def layout_first_walk(self, v):
-        el = self._graph.node[v]["el"]
-        if "children" in self._graph.node[v] and len(self._graph.node[v]["children"]) > 0:
-            children = self._graph.node[v]["children"]
+        el = self._graph.nodes[v]["el"]
+        if "children" in self._graph.nodes[v] and len(self._graph.nodes[v]["children"]) > 0:
+            children = self._graph.nodes[v]["children"]
             default_ancestor = children[0]
             for child in children:
                 self.layout_first_walk(child)
                 default_ancestor = self.layout_apportion(child, default_ancestor)
             self.layout_execute_shift(v)
-            first_child = self._graph.node[children[0]]["el"]
-            last_child = self._graph.node[children[-1]]["el"]
-            midpoint = (first_child.layout_prelim + last_child.layout_prelim + last_child.size()[0]) / 2
+            first_child = self._graph.nodes[children[0]]["el"]
+            last_child = self._graph.nodes[children[-1]]["el"]
+            midpoint = (
+                first_child.layout_prelim + last_child.layout_prelim +
+                last_child.size()[0]
+            ) / 2
             midpoint -= el.size()[0] / 2
-            if not el.layout_lsibling is None:
-                left_sibling = self._graph.node[el.layout_lsibling]["el"]
-                el.layout_prelim = left_sibling.layout_prelim + left_sibling.size()[0] + self.hmargin
+            if el.layout_lsibling is not None:
+                left_sibling = self._graph.nodes[el.layout_lsibling]["el"]
+                el.layout_prelim = (
+                    left_sibling.layout_prelim + left_sibling.size()[0] + self.hmargin
+                )
                 el.layout_mod = el.layout_prelim - midpoint
             else:
                 el.layout_prelim = midpoint
         else:
-            if not el.layout_lmost_sibling is None:
-                left_sibling = self._graph.node[el.layout_lsibling]["el"]
-                el.layout_prelim = left_sibling.layout_prelim + left_sibling.size()[0] + self.hmargin
+            if el.layout_lmost_sibling is not None:
+                left_sibling = self._graph.nodes[el.layout_lsibling]["el"]
+                el.layout_prelim = (
+                    left_sibling.layout_prelim + left_sibling.size()[0] + self.hmargin
+                )
             else:
                 el.layout_prelim = 0
 
-        logger.debug("<Branch %i> Element: %s prelim: %.1f, mod: %.1f, change: %.1f", self.id, v, el.layout_prelim, el.layout_mod, el.layout_change)
+        logger.debug(
+            f"<Branch {self.id}> Element: {v} prelim: {el.layout_prelim:.1f}, "
+            f"mod: {el.layout_mod:.1f}, change: {el.layout_change:.1f}"
+        )
 
     def layout_apportion(self, v, default_ancestor):
         # o = outside, i = inside, l/- = left, r/+ = right
         # v = vertex
         # s = sum(vertex mod properties)
-        el = self._graph.node[v]["el"]
+        el = self._graph.nodes[v]["el"]
         left_sibling = el.layout_lsibling
-        logger.debug("<Branch %i> layout_apportion - older_sibling: %s", self.id, left_sibling)
-        if not left_sibling is None:
+        logger.debug(f"<Branch {self.id}> layout_apportion - older_sibling: {left_sibling}")
+        if left_sibling is not None:
             vir = vor = v
             vil = left_sibling
             vol = el.layout_lmost_sibling
             sir = sor = el.layout_mod
 
-            vil_el = self._graph.node[vil]["el"]
-            vir_el = self._graph.node[vir]["el"]
-            vol_el = self._graph.node[vol]["el"]
-            vor_el = self._graph.node[vor]["el"]
+            vil_el = self._graph.nodes[vil]["el"]
+            vir_el = self._graph.nodes[vir]["el"]
+            vol_el = self._graph.nodes[vol]["el"]
+            vor_el = self._graph.nodes[vor]["el"]
 
             sil = vil_el.layout_mod
             sol = vol_el.layout_mod
 
             loop_i = 0
 
-            while (not self.layout_next_element(vil, direction="right") is None and
-                    not self.layout_next_element(vir, direction="left") is None):
+            while (self.layout_next_element(vil, direction="right") is not None and
+                    self.layout_next_element(vir, direction="left") is not None):
 
                 vil = self.layout_next_element(vil, direction="right")
                 vir = self.layout_next_element(vir, direction="left")
                 vol = self.layout_next_element(vol, direction="left")
                 vor = self.layout_next_element(vor, direction="right")
 
-                vil_el = self._graph.node[vil]["el"]
-                vir_el = self._graph.node[vir]["el"]
-                vol_el = self._graph.node[vol]["el"]
-                vor_el = self._graph.node[vor]["el"]
+                vil_el = self._graph.nodes[vil]["el"]
+                vir_el = self._graph.nodes[vir]["el"]
+                vol_el = self._graph.nodes[vol]["el"]
+                vor_el = self._graph.nodes[vor]["el"]
 
                 vor_el.layout_ancestor = v
 
                 width = vir_el.size()[0] + self.hmargin * 2
                 shift = (vil_el.layout_prelim + sil) - (vir_el.layout_prelim + sir) + width
-                logger.info("<Branch %i> Loop #%i... shift: %i", self.id, loop_i, shift)
+                logger.info(f"<Branch {self.id}> Loop #{loop_i}... shift: {shift}")
                 if shift > 0:
                     local_ancestor = self.layout_left_ancestor(vil, v, default_ancestor)
                     self.layout_move_subtree(local_ancestor, v, shift)
@@ -299,14 +333,16 @@ class Branch(object):
                 sor += vor_el.layout_mod
 
             vil_next_right = self.layout_next_element(vil, direction="right")
-            if not vil_next_right is None and self.layout_next_element(vor, direction="right") is None:# and not vil_next_right == vor:
-                logger.debug("<Branch %i> Setting thread from %s to %s", self.id, vor, vil_next_right)
+            if (vil_next_right is not None and
+                    self.layout_next_element(vor, direction="right") is None):
+                logger.debug(f"<Branch {self.id}> Setting thread from {vor} to {vil_next_right}")
                 vor_el.layout_thread = vil_next_right
                 vor_el.layout_mod += sil - sor
             else:
                 vir_next_left = self.layout_next_element(vir, direction="left")
-                if not vir_next_left is None and self.layout_next_element(vol, direction="left") is None:# and not vir_next_left == vol:
-                    logger.debug("<Branch %i> Setting thread from %s to %s", self.id, vol, vir_next_left)
+                if (vir_next_left is not None and
+                        self.layout_next_element(vol, direction="left") is None):
+                    logger.debug(f"<Branch {self.id}> Setting thread from {vol} to {vir_next_left}")
                     vol_el.layout_thread = vir_next_left
                     vol_el.layout_mod += sir - sol
                 default_ancestor = v
@@ -314,51 +350,58 @@ class Branch(object):
         return default_ancestor
 
     def layout_oldest_sibling(self, v):
-        logger.debug("<Branch %i> layout_oldest_sibling - v: %s", self.id, v)
-        if "children" in self._graph.node[v]:
-            return self._graph.node[v]["children"][0]
+        logger.debug(f"<Branch {self.id}> layout_oldest_sibling - v: {v}")
+        if "children" in self._graph.nodes[v]:
+            return self._graph.nodes[v]["children"][0]
         return None
 
     def layout_left_sibling(self, v):
-        logger.debug("<Branch %i> layout_left_sibling - v: %s", self.id, v)
+        logger.debug(f"<Branch {self.id}> layout_left_sibling - v: {v}")
         in_edges = self._graph.in_edges(nbunch=(v))
         if len(in_edges) > 0:
             parent = in_edges[0][0]
-            if ("children" in self._graph.node[parent] and
-                        len(self._graph.node[parent]["children"]) > 0 and
-                        v in self._graph.node[parent]["children"]):
-                index = self._graph.node[parent]["children"].index(v)
+            if ("children" in self._graph.nodes[parent] and
+                        len(self._graph.nodes[parent]["children"]) > 0 and
+                        v in self._graph.nodes[parent]["children"]):
+                index = self._graph.nodes[parent]["children"].index(v)
                 if index > 0:
-                    return self._graph.node[parent]["children"][index-1]
+                    return self._graph.nodes[parent]["children"][index-1]
         return None
 
     def layout_next_element(self, v, direction="left"):
-        logger.debug("<Branch %i> layout_next_element - Element: %s direction: %s", self.id, v, direction)
+        logger.debug(f"<Branch {self.id}> layout_next_element - Element: {v} direction: {direction}")
         if not self._graph.has_node(v):
-            logger.error("<Branch %i> layout_next_element - Graph does not contain node: %s", self.id, v)
+            logger.error(f"<Branch {self.id}> layout_next_element - Graph does not contain node: {v}")
             return None
-        elif "children" in self._graph.node[v] and len(self._graph.node[v]["children"]) > 0:
+        elif "children" in self._graph.nodes[v] and len(self._graph.nodes[v]["children"]) > 0:
             if direction == "left":
                 index = 0
             elif direction == "right":
                 index = -1
             else:
                 index = 0
-            logger.debug("<Branch %i> layout_next_element - Element: %s returning %s child at index %i: %s", self.id, v, direction, index, str(self._graph.node[v]["children"][index]))
-            return self._graph.node[v]["children"][index]
+            logger.debug(
+                f"<Branch {self.id}> layout_next_element - Element: {v} returning "
+                f"{direction} child at index {index}: {self._graph.nodes[v]['children'][index]}"
+            )
+            return self._graph.nodes[v]["children"][index]
         else:
-            logger.debug("<Branch %i> layout_next_element - Element: %s returning thread: %s", self.id, v, str(self._graph.node[v]["el"].layout_thread))
-            return self._graph.node[v]["el"].layout_thread
+            logger.debug(
+                f"<Branch {self.id}> layout_next_element - Element: {v} returning "
+                f"thread: {self._graph.nodes[v]['el'].layout_thread}"
+            )
+            return self._graph.nodes[v]["el"].layout_thread
 
     def layout_move_subtree(self, vl, vr, shift):
         # l/- = left, r/+ = right
         # v = vertex
-        vr_el = self._graph.node[vr]["el"]
-        vl_el = self._graph.node[vl]["el"]
-        # subtrees = max(1, vr_el.layout_number - vl_el.layout_number)
-        # subtrees = 1
+        vr_el = self._graph.nodes[vr]["el"]
+        vl_el = self._graph.nodes[vl]["el"]
         subtrees = vr_el.layout_number - vl_el.layout_number
-        logger.info("<Branch %i> layout_move_subtree - vl: %s, vr: %s, shift: %.2f, subtrees: %i", self.id, vl, vr, shift, subtrees)
+        logger.info(
+            f"<Branch {self.id}> layout_move_subtree - vl: {vl}, vr: {vr}, "
+            f"shift: {shift:.2f}, subtrees: {subtrees}"
+        )
         vr_el.layout_change -= shift / subtrees
         vr_el.layout_shift += shift
         vl_el.layout_change -= shift / subtrees
@@ -366,36 +409,44 @@ class Branch(object):
         vr_el.layout_mod += shift
 
     def layout_execute_shift(self, v):
-        if "children" in self._graph.node[v]:
-            logger.debug("<Branch %i, node %s> Executing shift", self.id, v)
+        if "children" in self._graph.nodes[v]:
+            logger.debug(f"<Branch {self.id}, node {v}> Executing shift")
             shift = 0
             change = 0
-            for child in reversed(self._graph.node[v]["children"]):
-                child_el = self._graph.node[child]["el"]
+            for child in reversed(self._graph.nodes[v]["children"]):
+                child_el = self._graph.nodes[child]["el"]
                 child_el.layout_prelim += shift
                 child_el.layout_mod += shift
                 change += child_el.layout_change
                 shift += child_el.layout_shift + change
 
     def layout_left_ancestor(self, vil, v, default_ancestor):
-        logger.info("<Branch %i> layout_left_ancestor - vil: %s  v: %s  default_ancestor: %s", self.id, vil, v, default_ancestor)
+        logger.info(
+            f"<Branch {self.id}> layout_left_ancestor - vil: {vil}  "
+            f"v: {v}  default_ancestor: {default_ancestor}"
+        )
         if self._graph.has_node(vil):
-            vil_ancestor = self._graph.node[vil]["el"].layout_ancestor
-            if not vil_ancestor is None:
+            vil_ancestor = self._graph.nodes[vil]["el"].layout_ancestor
+            if vil_ancestor is not None:
                 in_edges = self._graph.in_edges(nbunch=[vil_ancestor])
                 if len(in_edges) > 0:
                     parent = in_edges[0][0]
-                    if "children" in self._graph.node[parent] and len(self._graph.node[parent]["children"]):
-                        if v in self._graph.node[parent]["children"]:
+                    if ("children" in self._graph.nodes[parent] and
+                            len(self._graph.nodes[parent]["children"])):
+                        if v in self._graph.nodes[parent]["children"]:
                             return vil_ancestor
         return default_ancestor
 
     def layout_second_walk(self, v, shift, depth, height=0):
-        el = self._graph.node[v]["el"]
+        el = self._graph.nodes[v]["el"]
         el.x = el.layout_prelim + shift
         el.y = depth
-        logger.debug("<Branch %i> Element: %s (%.1f, %.1f)", self.id, v, el.x, el.y)
-        logger.debug("<Branch %i> Element: %s (%.1f, %.1f) prelim: %.1f, mod: %.1f, change: %.1f", self.id, v, el.x, el.y, el.layout_prelim, el.layout_mod, el.layout_change)
+        logger.debug(f"<Branch {self.id}> Element: {v} ({el.x:.1f}, {el.y:.1f})")
+        logger.debug(
+            f"<Branch {self.id}> Element: {v} ({el.x:.1f}, {el.y:.1f}) "
+            f"prelim: {el.layout_prelim:.1f}, mod: {el.layout_mod:.1f}, "
+            f"change: {el.layout_change:.1f}"
+        )
         if self._extremes[0] is None or el.x < self._extremes[0]:
             self._extremes[0] = el.x
         if self._extremes[1] is None or el.x > self._extremes[1]:
@@ -404,8 +455,8 @@ class Branch(object):
             self._extremes[2] = el.y
         if self._extremes[3] is None or el.y > self._extremes[3]:
             self._extremes[3] = el.y
-        if "children" in self._graph.node[v]:
-            for child in self._graph.node[v]["children"]:
+        if "children" in self._graph.nodes[v]:
+            for child in self._graph.nodes[v]["children"]:
                 self.layout_second_walk(child, shift + el.layout_mod, depth + height, height)
 
     def set_coordinates(self, x, y):
@@ -432,10 +483,8 @@ class Branch(object):
 
     def persist_coordinates(self):
         """Sets coordinates for branch and applies changes to all nodes"""
-        [
+        for vid, data in self._graph.nodes(data=True):
             data["el"].set_coordinates(data["el"].x, data["el"].y, add_to_history=True)
-            for vid, data in self._graph.nodes(data=True)
-        ]
 
     def extremes(self):
         """Returns coordinate extremes for branch"""
@@ -446,7 +495,7 @@ class Branch(object):
         return self.width, self.height
 
 
-class FamilyGraph(object):
+class FamilyGraph:
     def __init__(self, pedigree, font_size, hmargin=10, node_height=50, page_margin=10):
         self._pedigree = pedigree
         self.hmargin = hmargin
@@ -522,7 +571,7 @@ class FamilyGraph(object):
         return False
 
     def items(self):
-        return self._branched_graph.nodes_iter(data=True)
+        return self._branched_graph.nodes(data=True)
 
     def branch_links(self):
         return self._branch_links
@@ -532,9 +581,9 @@ class FamilyGraph(object):
 
     def node(self, id):
         try:
-            return self._branched_graph.node[id]
-        except:
-            logger.warn("Could not retrieve %s node from familygraph", id)
+            return self._branched_graph.nodes[id]
+        except (KeyError, AttributeError):
+            logger.warning(f"Could not retrieve {id} node from familygraph")
             return None
 
     def _create(self):
@@ -599,12 +648,12 @@ class FamilyGraph(object):
         # Create branched graph
         self._branched_graph = nx.maximum_branching(self._graph)
 
-        for v, d in self._graph.nodes_iter(data=True):
+        for v, d in self._graph.nodes(data=True):
             for k, val in d.items():
-                self._branched_graph.node[v][k] = val
+                self._branched_graph.nodes[v][k] = val
 
         # Add duplicate children to support cross-branch links
-        removed_edges = set(self._graph.edges_iter()) - set(self._branched_graph.edges_iter())
+        removed_edges = set(self._graph.edges()) - set(self._branched_graph.edges())
         for (nid1, nid2) in removed_edges:
             # Update original graph
             self._graph[nid1][nid2]["link"] = "branch"
@@ -619,11 +668,14 @@ class FamilyGraph(object):
                 for child in children:
                     if family.contains_child(child.id):
                         duplicate_child = self._pedigree.duplicate_individual(child)
-                        # vwidth = calculate_text_size(el.output_text(), self._font_size)[0]
-                        self._branched_graph.add_node("P{0}".format(duplicate_child.id), el=duplicate_child)
-                        self._branched_graph.add_edge(nid1, "P{0}".format(duplicate_child.id))
+                        self._branched_graph.add_node(
+                            f"P{duplicate_child.id}", el=duplicate_child
+                        )
+                        self._branched_graph.add_edge(nid1, f"P{duplicate_child.id}")
                         self._branch_links.add((child.id, duplicate_child.id))
-                        logger.debug("Added duplicate child: %i, %i", child.id, duplicate_child.id)
+                        logger.debug(
+                            f"Added duplicate child: {child.id}, {duplicate_child.id}"
+                        )
 
         # Create an undirected copy of graph
         self._undirected_graph = self._graph.to_undirected()
@@ -633,21 +685,26 @@ class FamilyGraph(object):
         # branch_start = time.time()
 
         # Create branches
-        self._branches = [Branch(id=i,
-                                subgraph=component,
-                                parent=self,
-                                font_size=self.font_size,
-                                hmargin=self.hmargin,
-                                node_height=self.node_height)
-                            for i, component in enumerate(nx.weakly_connected_component_subgraphs(self._branched_graph, copy=False))]
+        self._branches = [
+            Branch(
+                id=i,
+                subgraph=component,
+                parent=self,
+                font_size=self.font_size,
+                hmargin=self.hmargin,
+                node_height=self.node_height
+            )
+            for i, component in enumerate(
+                self._branched_graph.subgraph(c).copy()
+                for c in nx.weakly_connected_components(self._branched_graph)
+            )
+        ]
 
-        # logger.info("Branch creation took %.4fs", time.time()-branch_start)
-
-        logger.info("Family graph and branch creation took %.2fs", time.time()-create_start)
+        logger.info(f"Family graph and branch creation took {time.time()-create_start:.2f}s")
 
     def _layout(self):
         """Calculate layout for graph"""
-        logger.info("Starting graph layout for %i branches", len(self._branches))
+        logger.info(f"Starting graph layout for {len(self._branches)} branches")
         layout_start = time.time()
 
         branch_graph = nx.Graph()
@@ -664,11 +721,11 @@ class FamilyGraph(object):
             bwidth, bheight = branch.size()
             x += bwidth + self.hmargin*10
             # y += bheight + self.node_height*2
-            logger.debug("<Branch %i> Width: %.2f Height: %.2f", i, bwidth, bheight)
-            logger.debug("<Branch %i> layout took: %.4fs", i, time.time()-branch_layout_start)
+            logger.debug(f"<Branch {i}> Width: {bwidth:.2f} Height: {bheight:.2f}")
+            logger.debug(f"<Branch {i}> layout took: {time.time()-branch_layout_start:.4f}s")
             # except Exception as e:
-            #     logger.warn("Error laying out branch %i:\t%s\n%s", i, sys.exc_info()[0], "".join(traceback.format_tb(sys.exc_info()[2])))
-        logger.info("Graph layout took: %.2fs", time.time()-layout_start)
+            #     logger.warning(f"Error laying out branch {i}:\t{sys.exc_info()[0]}\n{traceback.format_tb(sys.exc_info()[2])}")
+        logger.info(f"Graph layout took: {time.time()-layout_start:.2f}s")
 
 
 

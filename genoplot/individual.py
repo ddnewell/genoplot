@@ -6,12 +6,16 @@
 # into with Welded Anvil Technologies (David D. Newell).
 # @author david@newell.at
 
-import logging, dateparser
-from .utils import stripName, calculate_text_size
+import logging
+
+import dateparser
+
+from .utils import calculate_text_size, stripName
+
 logger = logging.getLogger("genoplot")
 
 
-class Individual(object):
+class Individual:
     def __init__(self, individual, pedigree=None, output_fields=None, font_size=10, **kwargs):
         """
         Individual - defines a  in a pedigree
@@ -29,7 +33,14 @@ class Individual(object):
         self.name = ""
         self._color = "#F2E6D2"
         self._coordinates = set()
-        self._output_fields = output_fields if not output_fields is None else ["layout_branch", "layout_number", "layout_family", "layout_ancestor", "layout_prelims", "layout_shifts", "layout_mods", "id", "name"]
+        if output_fields is None:
+            self._output_fields = [
+                "layout_branch", "layout_number", "layout_family",
+                "layout_ancestor", "layout_prelims", "layout_shifts",
+                "layout_mods", "id", "name"
+            ]
+        else:
+            self._output_fields = output_fields
 
         self._font_size = font_size
 
@@ -43,7 +54,8 @@ class Individual(object):
         self.layout_family = None
         self.layout_branch = None
 
-        [setattr(self, k, v) for k, v in kwargs.items()]
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
         self._setup()
         self.width, self.height = self.size()
@@ -64,26 +76,26 @@ class Individual(object):
 
         try:
             self.sex = self._raw.sex
-        except:
+        except AttributeError:
             self.sex = "U"
 
         try:
             self.mother = int(self._raw.mother.id.replace("@", "").replace("P", ""))
-        except:
+        except AttributeError:
             self.mother = None
 
         try:
             self.father = int(self._raw.father.id.replace("@", "").replace("P", ""))
-        except:
+        except AttributeError:
             self.father = None
 
         try:
-            if type(self._raw.birth) is list:
+            if isinstance(self._raw.birth, list):
                 birth = self._raw.birth[0]
             else:
                 birth = self._raw.birth
             bdate = birth.date
-            self.birthDate = "* {0}".format(bdate).strip()
+            self.birthDate = f"* {bdate}".strip()
             self.birthPlace = birth.place.strip()
             if "abt" in bdate.lower():
                 bdate = bdate.strip("abtABT. ")
@@ -98,18 +110,18 @@ class Individual(object):
                 self.birth = bdate
             else:
                 self.birth = parsedBdate.strftime("%Y-%m-%d")
-        except:
+        except (AttributeError, IndexError, TypeError):
             self.birth = None
             self.birthDate = None
             self.birthPlace = None
 
         try:
-            if type(self._raw.death) is list:
+            if isinstance(self._raw.death, list):
                 death = self._raw.death[0]
             else:
                 death = self._raw.death
             ddate = death.date
-            self.deathDate = "✝ {0}".format(ddate).strip()
+            self.deathDate = f"✝ {ddate}".strip()
             self.deathPlace = death.place.strip()
             if "abt" in ddate.lower():
                 ddate = ddate.strip("abtABT. ")
@@ -124,7 +136,7 @@ class Individual(object):
                 self.death = ddate
             else:
                 self.death = parsedDdate.strftime("%Y-%m-%d")
-        except:
+        except (AttributeError, IndexError, TypeError):
             self.death = None
             self.deathDate = None
             self.deathPlace = None
@@ -173,7 +185,7 @@ class Individual(object):
             for fam in families:
                 self.layout_number.append(fam.layout_number)
                 self.layout_ancestor.append(fam.layout_ancestor)
-                self.layout_family.append("F{0}".format(fam.id))
+                self.layout_family.append(f"F{fam.id}")
                 self.layout_branch.append(fam.layout_branch)
                 self.layout_prelims.append(int(fam.layout_prelim))
                 self.layout_shifts.append(int(fam.layout_shift))

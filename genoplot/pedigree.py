@@ -6,13 +6,19 @@
 # into with Welded Anvil Technologies (David D. Newell).
 # @author david@newell.at
 
-import logging, gedcom, time, copy
+import copy
+import logging
+import time
+
+import gedcom
+
 from .family import Family
 from .individual import Individual
+
 logger = logging.getLogger("genoplot")
 
 
-class Pedigree(object):
+class Pedigree:
     def __init__(self, name, gedcom_file, font_size=10, hmargin=0, **kwargs):
         """
         Pedigree - defines a pedigree built from a gedcom file
@@ -32,7 +38,8 @@ class Pedigree(object):
         self._font_size = font_size
         self._hmargin = hmargin
 
-        [setattr(self, k, v) for k, v in kwargs.items()]
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
         self._setup()
 
@@ -46,9 +53,9 @@ class Pedigree(object):
                 logger.warn("Error adding individual: %s", individual)
                 continue
 
-            logger.debug("Adding individual: %s", i.name)
+            logger.debug(f"Adding individual: {i.name}")
             self._individuals[i.id] = i
-        logger.info("Processing individuals took %.4fs", time.time()-start)
+        logger.info(f"Processing individuals took {time.time()-start:.4f}s")
 
         logger.debug("Processing families in GEDCOM")
         start = time.time()
@@ -56,15 +63,20 @@ class Pedigree(object):
             try:
                 f = Family(family, self, font_size=self._font_size, hmargin=self._hmargin)
             except Exception:
-                logger.warn("Error adding family: %s", family)
+                logger.warning(f"Error adding family: {family}")
                 continue
 
-            logger.debug("Adding family: %s", f.id)
+            logger.debug(f"Adding family: {f.id}")
             self._families[f.id] = f
-            [self._parent_ids.add(id) for id in f.parent_ids()]
-            [self._children_ids.add(id) for id in f.children_ids()]
-        logger.info("Processing families took %.4fs", time.time()-start)
-        logger.info("Parsing GEDCOM complete: %i individuals and %i families found", len(self._individuals), len(self._families))
+            for id in f.parent_ids():
+                self._parent_ids.add(id)
+            for id in f.children_ids():
+                self._children_ids.add(id)
+        logger.info(f"Processing families took {time.time()-start:.4f}s")
+        logger.info(
+            f"Parsing GEDCOM complete: {len(self._individuals)} individuals "
+            f"and {len(self._families)} families found"
+        )
 
     def __len__(self):
         """Returns number of individuals in pedigree"""
@@ -76,11 +88,18 @@ class Pedigree(object):
             duplicate = copy.copy(individual)
             duplicate.id = max(self._individuals) + 1
             self._individuals[duplicate.id] = duplicate
-            [family.add_child(duplicate.id) for family in self.individual_families(individual.id, role="child")]
-            logger.debug("Created duplicate individual: %s\tID: %i -> %i", individual.name, individual.id, duplicate.id)
+            for family in self.individual_families(individual.id, role="child"):
+                family.add_child(duplicate.id)
+            logger.debug(
+                f"Created duplicate individual: {individual.name}\t"
+                f"ID: {individual.id} -> {duplicate.id}"
+            )
             return duplicate
         else:
-            logger.warn("Creating duplicate individual not in pedigree: %i - %s", individual.id, individual.name)
+            logger.warning(
+                f"Creating duplicate individual not in pedigree: "
+                f"{individual.id} - {individual.name}"
+            )
             return copy.copy(individual)
 
     def is_parent(self, pid):
@@ -98,7 +117,7 @@ class Pedigree(object):
         :type pid: int
         """
         if pid not in self._individuals:
-            logger.warn("Individual not found in pedigree: %i", pid)
+            logger.warning(f"Individual not found in pedigree: {pid}")
             return None
         else:
             return self._individuals[pid]
@@ -129,15 +148,21 @@ class Pedigree(object):
         else:
             return self._families[fid]
 
-    def families_with_parent(self, parents=[]):
+    def families_with_parent(self, parents=None):
         """Returns families with parent IDs specified
 
         :param parents: Parent(s) to find in family
         :type parents: int or list
         """
-        if type(parents) is int:
-            return [family for family in self._families.values() if parents in family.parent_ids()]
-        elif type(parents) is list:
+        if parents is None:
+            parents = []
+
+        if isinstance(parents, int):
+            return [
+                family for family in self._families.values()
+                if parents in family.parent_ids()
+            ]
+        elif isinstance(parents, list):
             f = None
             for parent in parents:
                 if f is None:

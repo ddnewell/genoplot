@@ -6,6 +6,14 @@
 # into with Welded Anvil Technologies (David D. Newell).
 # @author david@newell.at
 
+import logging
+import time
+
+import coloredlogs
+import networkx as nx
+
+from .genoplot import GenoPlot
+
 __version__ = "0.0.1"
 
 __copyright__ = """
@@ -20,14 +28,10 @@ __copyright__ = """
 
 __author__ = "David D. Newell <david@newell.at>"
 
-import logging, time
-import networkx as nx
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("genoplot")
-import coloredlogs
 coloredlogs.install(level="INFO")
 
-from .genoplot import GenoPlot
 
 def main():
     pstart = time.time()
@@ -36,13 +40,11 @@ def main():
     # g = p.create_grandalf()
     p.draw()
 
-    logger.info("Total time to build GenoPlot: %.2fs", time.time() - pstart)
-    logger.info("Total time to process: %.2fs", time.time() - pstart)
+    logger.info(f"Total time to build GenoPlot: {time.time() - pstart:.2f}s")
+    logger.info(f"Total time to process: {time.time() - pstart:.2f}s")
 
     return p
 
 
-
 # Test code
-
 # import genoplot; import networkx as nx; p = genoplot.main()

@@ -7,11 +7,13 @@
 # @author david@newell.at
 
 import logging
+
 from .utils import calculate_text_size
+
 logger = logging.getLogger("genoplot")
 
 
-class Family(object):
+class Family:
     """
     Family - defines a family in a pedigree
     :param family: Raw Gedcom parsed family
@@ -46,7 +48,8 @@ class Family(object):
         self.layout_ancestor = None
         self.layout_branch = None
 
-        [setattr(self, k, v) for k, v in kwargs.items()]
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
         self._setup()
         self.width, self.height = self.size()
@@ -75,11 +78,14 @@ class Family(object):
     def _sort_by_birth(self, cid):
         child = self._pedigree.individual(cid)
         if cid is None or child is None:
-            logger.critical("Individual %s does not exist, cannot continue sorting children in family %s", cid, self.id)
+            logger.critical(
+                f"Individual {cid} does not exist, cannot continue "
+                f"sorting children in family {self.id}"
+            )
             return 0
         if child.birth is None:
             return 0
-        elif type(child.birth) is str:
+        elif isinstance(child.birth, str):
             return 0
         else:
             return child.birth
@@ -101,17 +107,15 @@ class Family(object):
         mother = self.mother()
         self.x = x
         self.y = y
-        if not father is None:
+        if father is not None:
             father.set_coordinates(x, y, add_to_history)
             fwidth = father.size()[0]
         else:
             fwidth = self._hmargin
-        if not mother is None:
+        if mother is not None:
             mwidth = mother.size()[0]
-            mx = x+fwidth/2+mwidth/2+self._hmargin*2
+            mx = x + fwidth/2 + mwidth/2 + self._hmargin*2
             mother.set_coordinates(mx, y, add_to_history)
-        else:
-            pass
 
     def father_id(self):
         """Returns father individual ID"""
@@ -205,7 +209,7 @@ class Family(object):
         father = self.father()
 
         for parent in self.parents():
-            if not parent is None:
+            if parent is not None:
                 pw, ph = parent.size()
                 width += pw
                 height += ph

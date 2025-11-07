@@ -7,6 +7,7 @@
 # @author david@newell.at
 
 import logging
+
 logger = logging.getLogger("genoplot")
 
 
@@ -17,21 +18,21 @@ def calculate_text_size(text, font_size):
     :param font_size: Font size
     :type: font_size: int
     """
-    if type(text) is str:
+    if isinstance(text, str):
         text = [text]
 
     BASE_FONT_WIDTH = 0.52
-    font_width = font_size*BASE_FONT_WIDTH
+    font_width = font_size * BASE_FONT_WIDTH
 
     width = []
     height = []
 
     for t in text:
-        t_width = len(t)*font_width
+        t_width = len(t) * font_width
         if t_width > 1.8:
             t_width += 0.2
 
-        t_height = font_size*1.2
+        t_height = font_size * 1.2
 
         width.append(t_width)
         height.append(t_height)
@@ -40,8 +41,11 @@ def calculate_text_size(text, font_size):
 
 
 def stripName(name):
-    if not type(name) is str:
+    if not isinstance(name, str):
         return name
     invalid = "'\"(),."
-    return "".join(c for c in name.replace("\t", " ").replace(",", " ") if c not in invalid)
+    return "".join(
+        c for c in name.replace("\t", " ").replace(",", " ")
+        if c not in invalid
+    )
 
