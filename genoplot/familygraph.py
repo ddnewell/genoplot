@@ -50,61 +50,6 @@ class Branch:
     def __contains__(self, node):
         return node in self._graph
 
-    def _bak_layout(self):
-        # Get first node
-        v = None
-        for vid, deg in self._graph.in_degree().items():
-            if deg == 0:
-                v = vid
-                break
-        if v is None:
-            logger.critical("Could not find parent node to layout graph: stopping")
-            exit(1)
-
-        heights = self.layout_preprocessing(v)
-
-        self._extremes = [None]*4
-        dt = firstwalk(Vertex(first_node))
-        min_dt = second_walk(dt, height=self.node_height+max(heights))
-        if min_dt < 0:
-            third_walk(dt, -min_dt)
-        first_vertex = dt
-
-        # TODO: update extremes
-
-        logger.debug("<Branch %i> First Element: %s", self.id, v)
-
-        # Update coordinates
-        dx = dy = 0
-        if not self._extremes[0] == 0:
-            dx = -self._extremes[0]
-        if not self._extremes[2] == 0:
-            dy = -self._extremes[2]
-        if dx == 0 and dy == 0:
-            logger.debug(f"<Branch {self.id}> Extremes after initial layout: {self._extremes}")
-        else:
-            logger.debug(
-                f"<Branch {self.id}> Extremes after initial layout: {self._extremes}    "
-                f"dx: {dx:.2f}  dy: {dy:.2f}"
-            )
-            self._extremes = [None]*4
-            for vid, data in self._graph.nodes(data=True):
-                el = data["el"]
-                el.x += dx
-                el.y += dy
-                if self._extremes[0] is None or el.x < self._extremes[0]:
-                    self._extremes[0] = el.x
-                if self._extremes[1] is None or el.x > self._extremes[1]:
-                    self._extremes[1] = el.x
-                if self._extremes[2] is None or el.y < self._extremes[2]:
-                    self._extremes[2] = el.y
-                if self._extremes[3] is None or el.y > self._extremes[3]:
-                    self._extremes[3] = el.y
-            logger.debug(f"<Branch {self.id}> Extremes after adjustment: {self._extremes}")
-        # Update branch size
-        self.width = self._extremes[1] - self._extremes[0]
-        self.height = self._extremes[3] - self._extremes[2]
-
     def layout(self):
         # Get first node
         v = None
@@ -680,9 +625,6 @@ class FamilyGraph:
         # Create an undirected copy of graph
         self._undirected_graph = self._graph.to_undirected()
 
-        # logger.info("Family graph creation took %.2fs", time.time()-create_start)
-        # logger.info("Creating branches")
-        # branch_start = time.time()
 
         # Create branches
         self._branches = [
@@ -714,60 +656,15 @@ class FamilyGraph:
 
         for i, branch in enumerate(self._branches):
             branch_layout_start = time.time()
-            # try:
             branch.layout()
             branch.set_coordinates(x, y)
             branch.persist_coordinates()
             bwidth, bheight = branch.size()
             x += bwidth + self.hmargin*10
-            # y += bheight + self.node_height*2
             logger.debug(f"<Branch {i}> Width: {bwidth:.2f} Height: {bheight:.2f}")
             logger.debug(f"<Branch {i}> layout took: {time.time()-branch_layout_start:.4f}s")
-            # except Exception as e:
-            #     logger.warning(f"Error laying out branch {i}:\t{sys.exc_info()[0]}\n{traceback.format_tb(sys.exc_info()[2])}")
         logger.info(f"Graph layout took: {time.time()-layout_start:.2f}s")
 
 
-
-
-        # layout_start = time.time()
-
-        # branch_graph = self._graph.copy()
-        # remove_edges = [(u,v) for u, v, d in branch_graph.edges_iter(data=True) if d["link"] == "standard"]
-        # branch_graph.remove_edges_from(remove_edges)
-        # branched_edges = branch_graph.edges()
-        # branched_nodes = {}
-        # for u, v in branched_edges:
-        #     branched_nodes[u] = set()
-        #     branched_nodes[v] = set()
-
-        # branch_graph = nx.Graph()
-
-        # for i, branch in enumerate(self._branches):
-        #     branch_layout_start = time.time()
-        #     branch.layout()
-        #     bwidth, bheight = branch.size()
-        #     branch_graph.add_node(i, width=bwidth, height=bheight)
-        #     logger.info("<Branch %i> Added node to branch graph width: %i height: %i", i, bwidth, bheight)
-        #     for k in branched_nodes:
-        #         if k in branch:
-        #             branched_nodes[k].add(i)
-        #     logger.info("Branch %i layout took: %.4fs", i, time.time() - branch_layout_start)
-
-        # for u, v in branched_edges:
-        #     for s, t in itertools.product(branched_nodes[u], branched_nodes[v]):
-        #         if branch_graph.has_edge(s, t):
-        #             branch_graph.edge[s][t]["weight"] += 1
-        #         else:
-        #             branch_graph.add_edge(s, t, weight=1)
-
-        # branch_pos = nx.spring_layout(branch_graph, dim=5000, k=len(branch_graph))
-
-        # for i, branch in enumerate(self._branches):
-        #     logger.info("<Branch %i> Set branch position to x: %.2f y: %.2f", i, 6000*branch_pos[i][0]+x, 6000*branch_pos[i][0]+y)
-        #     branch.set_coordinates(6000*branch_pos[i][0]+x, 6000*branch_pos[i][0]+y)
-        #     branch.persist_coordinates()
-
-        # logger.info("Graph layout took: %.4fs", time.time() - layout_start)
 
 

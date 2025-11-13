@@ -6,52 +6,76 @@
 # into with Welded Anvil Technologies (David D. Newell).
 # @author david@newell.at
 
-import logging
+"""Family class for representing family units in a pedigree."""
 
+import logging
+from typing import TYPE_CHECKING, Any, Optional, Tuple
+
+from .constants import DEFAULT_HMARGIN
 from .utils import calculate_text_size
+
+if TYPE_CHECKING:
+    from .individual import Individual
+    from .pedigree import Pedigree
 
 logger = logging.getLogger("genoplot")
 
 
 class Family:
+    """Represents a family unit (parents and children) in a pedigree.
+
+    Attributes:
+        id: Unique identifier for the family.
+        x: X coordinate for graph layout.
+        y: Y coordinate for graph layout.
+        width: Calculated width for display.
+        height: Calculated height for display.
     """
-    Family - defines a family in a pedigree
-    :param family: Raw Gedcom parsed family
-    :type family: object
-    :param pedigree: Pedigree object to which family belongs
-    :type pedigree: object
-    """
-    def __init__(self, family, pedigree=None, font_size=10, hmargin=0, **kwargs):
+
+    def __init__(
+        self,
+        family: Any,
+        pedigree: Optional['Pedigree'] = None,
+        font_size: int = 10,
+        hmargin: int = DEFAULT_HMARGIN,
+        **kwargs: Any
+    ) -> None:
+        """Initialize a Family.
+
+        Args:
+            family: Raw GEDCOM parsed family object.
+            pedigree: Pedigree object to which family belongs.
+            font_size: Font size for text rendering.
+            hmargin: Horizontal margin between parents.
+            **kwargs: Additional attributes to set on the family.
         """
-        Family - defines a family in a pedigree
-        :param family: Raw Gedcom parsed family
-        :type family: object
-        :param pedigree: Pedigree object to which family belongs
-        :type pedigree: object
-        """
-        self._raw = family
-        self._pedigree = pedigree
-        self._father = None
-        self._mother = None
+        self._raw: Any = family
+        self._pedigree: Optional['Pedigree'] = pedigree
+        self._father: Optional[int] = None
+        self._mother: Optional[int] = None
 
-        self._font_size = font_size
-        self._hmargin = hmargin
-        self.x = 0
-        self.y = 0
+        self._font_size: int = font_size
+        self._hmargin: int = hmargin
+        self.x: float = 0.0
+        self.y: float = 0.0
 
-        self.layout_number = 0
-        self.layout_prelim = 0
-        self.layout_mod = 0
-        self.layout_change = 0
-        self.layout_shift = 0
-        self.layout_thread = None
-        self.layout_ancestor = None
-        self.layout_branch = None
+        # Layout properties
+        self.layout_number: int = 0
+        self.layout_prelim: float = 0.0
+        self.layout_mod: float = 0.0
+        self.layout_change: float = 0.0
+        self.layout_shift: float = 0.0
+        self.layout_thread: Optional[Any] = None
+        self.layout_ancestor: Optional[Any] = None
+        self.layout_branch: Optional[int] = None
 
+        # Set additional keyword arguments
         for k, v in kwargs.items():
             setattr(self, k, v)
 
         self._setup()
+        self.width: float
+        self.height: float
         self.width, self.height = self.size()
 
     def _setup(self):
@@ -90,12 +114,32 @@ class Family:
         else:
             return child.birth
 
-    def add_child(self, pid):
-        """Adds specified individual to family"""
+    def __repr__(self) -> str:
+        """Return detailed string representation of Family."""
+        return (
+            f"Family(id={self.id}, father={self._father}, "
+            f"mother={self._mother}, children={len(self._children_ids)})"
+        )
+
+    def __str__(self) -> str:
+        """Return human-readable string representation."""
+        return f"Family {self.id}"
+
+    def add_child(self, pid: int) -> None:
+        """Add a child to the family.
+
+        Args:
+            pid: Individual ID of the child to add.
+        """
         self._children_ids.append(pid)
         self._sort_children()
 
-    def set_coordinates(self, x, y, add_to_history=False):
+    def set_coordinates(
+        self,
+        x: float,
+        y: float,
+        add_to_history: bool = False
+    ) -> None:
         """Sets coordinates for parents
 
         :param x: Family x coordinate
@@ -117,83 +161,149 @@ class Family:
             mx = x + fwidth/2 + mwidth/2 + self._hmargin*2
             mother.set_coordinates(mx, y, add_to_history)
 
-    def father_id(self):
-        """Returns father individual ID"""
+    @property
+    def father_id(self) -> Optional[int]:
+        """Get father's individual ID.
+
+        Returns:
+            Father's ID or None if not present.
+        """
         return self._father
 
-    def mother_id(self):
-        """Returns mother individual ID"""
+    @property
+    def mother_id(self) -> Optional[int]:
+        """Get mother's individual ID.
+
+        Returns:
+            Mother's ID or None if not present.
+        """
         return self._mother
 
-    def father(self):
-        """Returns father individual object"""
+    def father(self) -> Optional['Individual']:
+        """Get father Individual object.
+
+        Returns:
+            Father Individual or None if not present.
+
+        Raises:
+            ValueError: If pedigree is not defined.
+        """
         if self._pedigree is None:
-            raise Exception("Pedigree is not defined")
+            raise ValueError("Pedigree is not defined")
         if self._father is None:
             return None
         return self._pedigree.individual(self._father)
 
-    def mother(self):
-        """Returns mother individual object"""
+    def mother(self) -> Optional['Individual']:
+        """Get mother Individual object.
+
+        Returns:
+            Mother Individual or None if not present.
+
+        Raises:
+            ValueError: If pedigree is not defined.
+        """
         if self._pedigree is None:
-            raise Exception("Pedigree is not defined")
+            raise ValueError("Pedigree is not defined")
         if self._mother is None:
             return None
         return self._pedigree.individual(self._mother)
 
-    def parent_count(self):
-        """Returns number of parents in family"""
+    def parent_count(self) -> int:
+        """Get number of parents in family.
+
+        Returns:
+            Count of parents (0-2).
+        """
         return len(self._parent_ids)
 
-    def parent_ids(self):
-        """Returns IDs of parents in family"""
+    def parent_ids(self) -> list[int]:
+        """Get IDs of parents in family.
+
+        Returns:
+            List of parent individual IDs.
+        """
         return self._parent_ids
 
-    def parents(self):
-        """Returns Individual objects for parents in family"""
+    def parents(self) -> list['Individual']:
+        """Get Individual objects for parents in family.
+
+        Returns:
+            List of parent Individual objects.
+
+        Raises:
+            ValueError: If pedigree is not defined.
+        """
         if self._pedigree is None:
-            raise Exception("Pedigree is not defined")
+            raise ValueError("Pedigree is not defined")
         return [self._pedigree.individual(pid) for pid in self._parent_ids]
 
-    def children_count(self):
-        """Returns number of children in family"""
+    def children_count(self) -> int:
+        """Get number of children in family.
+
+        Returns:
+            Count of children.
+        """
         return len(self._children_ids)
 
-    def children_ids(self):
-        """Returns IDs of children in family"""
+    def children_ids(self) -> list[int]:
+        """Get IDs of children in family.
+
+        Returns:
+            List of child individual IDs.
+        """
         return self._children_ids
 
-    def children(self):
-        """Returns Individual objects for children in family"""
+    def children(self) -> list['Individual']:
+        """Get Individual objects for children in family.
+
+        Returns:
+            List of child Individual objects sorted by birth date.
+
+        Raises:
+            ValueError: If pedigree is not defined.
+        """
         if self._pedigree is None:
-            raise Exception("Pedigree is not defined")
-        return [self._pedigree.individual(pid) for pid in sorted(self._children_ids, key=self._sort_by_birth)]
+            raise ValueError("Pedigree is not defined")
+        return [
+            self._pedigree.individual(pid)
+            for pid in sorted(self._children_ids, key=self._sort_by_birth)
+        ]
 
-    def contains_parent(self, pid):
-        """Returns whether specified id is a parent in this family
+    def contains_parent(self, pid: int) -> bool:
+        """Check if specified ID is a parent in this family.
 
-        :param pid: Individual ID
-        :type pid: int
+        Args:
+            pid: Individual ID to check.
+
+        Returns:
+            True if ID is a parent in this family.
         """
         return pid in self._parent_ids
 
-    def contains_child(self, pid):
-        """Returns whether specified id is a child in this family
+    def contains_child(self, pid: int) -> bool:
+        """Check if specified ID is a child in this family.
 
-        :param pid: Individual ID
-        :type pid: int
+        Args:
+            pid: Individual ID to check.
+
+        Returns:
+            True if ID is a child in this family.
         """
         return pid in self._children_ids
 
-    def __contains__(self, pid):
-        """Returns whether specified id is in this family (either parent or child)
+    def __contains__(self, pid: int) -> bool:
+        """Check if specified ID is in this family (parent or child).
 
-        :param pid: Individual ID
-        :type pid: int
+        Args:
+            pid: Individual ID to check.
+
+        Returns:
+            True if ID is in this family.
         """
         return self.contains_child(pid) or self.contains_parent(pid)
 
-    def size(self):
+    def size(self) -> Tuple[float, float]:
         """
         Returns label size of indivdual at specified font size
 

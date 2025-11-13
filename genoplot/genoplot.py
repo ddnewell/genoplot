@@ -6,13 +6,26 @@
 # into with Welded Anvil Technologies (David D. Newell).
 # @author david@newell.at
 
+"""GenoPlot class for creating pedigree visualizations."""
+
 import itertools
 import logging
 import time
+from pathlib import Path
+from typing import Optional, Tuple, Union
 
 import networkx as nx
 import svgwrite
 
+from .constants import (
+    DEFAULT_FONT_SIZE,
+    DEFAULT_HMARGIN,
+    DEFAULT_PAGE_MARGIN,
+    DEFAULT_SYMBOL_SIZE,
+    DUPLICATE_CONNECTOR_COLOR,
+    MAX_OVERLAP_ITERATIONS,
+    OVERLAP_ADJUSTMENT_STEP,
+)
 from .family import Family
 from .familygraph import FamilyGraph
 from .pedigree import Pedigree
@@ -22,41 +35,59 @@ logger = logging.getLogger("genoplot")
 
 
 class GenoPlot:
-    def __init__(self,
-                name,
-                gedcom_file,
-                output_file=None,
-                font_size=10,
-                hmargin=20,
-                symbol_size=25,
-                page_margin=100
-                ):
-        """
-        GenoPlot - defines a pedigree plot based on specified gedcom file
+    """Create and render pedigree plots from GEDCOM files.
 
-        :param name: Plot name/title
-        :type name: str
-        :param gedcom_file: GEDCOM file path
-        :type gedcom_file: str
+    Attributes:
+        name: Plot name/title.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        gedcom_file: Union[str, Path],
+        output_file: Optional[Union[str, Path]] = None,
+        font_size: int = DEFAULT_FONT_SIZE,
+        hmargin: int = DEFAULT_HMARGIN,
+        symbol_size: int = DEFAULT_SYMBOL_SIZE,
+        page_margin: int = DEFAULT_PAGE_MARGIN
+    ) -> None:
+        """Initialize a GenoPlot.
+
+        Args:
+            name: Plot name/title.
+            gedcom_file: Path to GEDCOM file.
+            output_file: Output SVG file path. Defaults to {name}.svg.
+            font_size: Font size for text rendering.
+            hmargin: Horizontal margin between elements.
+            symbol_size: Size of individual symbols.
+            page_margin: Margin around the page.
         """
-        logger.info(f"Creating GenoPlot named '{name}' from GEDCOM '{gedcom_file}'")
-        self.name = name
-        self._pedigree = Pedigree(name, gedcom_file, font_size=font_size, hmargin=hmargin)
+        gedcom_path = Path(gedcom_file)
+        logger.info(f"Creating GenoPlot named '{name}' from GEDCOM '{gedcom_path}'")
+
+        self.name: str = name
+        self._pedigree: Pedigree = Pedigree(
+            name, str(gedcom_path), font_size=font_size, hmargin=hmargin
+        )
+
+        # Set output file path
         if output_file is None:
-            self._output_file = f"{self.name}.svg"
+            self._output_file = Path(f"{self.name}.svg")
         else:
-            self._output_file = output_file
-        if ".svg" not in self._output_file:
-            self._output_file += ".svg"
-        self._graph = None
+            self._output_file = Path(output_file)
+
+        if self._output_file.suffix != ".svg":
+            self._output_file = self._output_file.with_suffix(".svg")
+
+        self._graph: Optional[FamilyGraph] = None
         self._layout = None
-        self._font_size = font_size
-        self._symbol_size = symbol_size
-        self._hmargin = hmargin
-        self._node_height = self._symbol_size*2#*6
-        self._page_margin = page_margin
-        self._connectors = []
-        self._image_layers = {
+        self._font_size: int = font_size
+        self._symbol_size: int = symbol_size
+        self._hmargin: int = hmargin
+        self._node_height: int = self._symbol_size * 2
+        self._page_margin: int = page_margin
+        self._connectors: list[Tuple[Tuple[float, float], Tuple[float, float]]] = []
+        self._image_layers: dict[str, list] = {
             "-1:duplicates": [],
             "0:connectors": [],
             "1:individuals": [],
@@ -64,19 +95,33 @@ class GenoPlot:
             "3:textextent": []
         }
 
-    def draw(self):
-        """Draws pedigree plot based on specified parameters"""
+    def __repr__(self) -> str:
+        """Return string representation of GenoPlot."""
+        return (
+            f"GenoPlot(name={self.name!r}, "
+            f"output_file={str(self._output_file)!r})"
+        )
+
+    def draw(self) -> None:
+        """Draw pedigree plot and save to output file."""
         logger.info("Starting plot draw")
         draw_start = time.time()
-        self._graph = FamilyGraph(self._pedigree,
-                                    font_size=self._font_size,
-                                    hmargin=self._hmargin,
-                                    node_height=self._node_height,
-                                    page_margin=self._page_margin)
+        self._graph = FamilyGraph(
+            self._pedigree,
+            font_size=self._font_size,
+            hmargin=self._hmargin,
+            node_height=self._node_height,
+            page_margin=self._page_margin
+        )
 
         extremes = self._graph.extremes()
-        self._svg = svgwrite.Drawing(filename=self._output_file,
-                                    size=(extremes[1]+self._page_margin*2, extremes[3]*1.2+self._page_margin*2))
+        self._svg = svgwrite.Drawing(
+            filename=str(self._output_file),
+            size=(
+                extremes[1] + self._page_margin * 2,
+                extremes[3] * 1.2 + self._page_margin * 2
+            )
+        )
 
         # for vid, loc in self._layout.items():
         for vid, d in self._graph.items():

@@ -6,88 +6,121 @@
 # into with Welded Anvil Technologies (David D. Newell).
 # @author david@newell.at
 
+"""Individual class for representing people in a pedigree."""
+
 import logging
+from typing import TYPE_CHECKING, Any, Generator, Optional, Set, Tuple
 
 import dateparser
 
-from .utils import calculate_text_size, stripName
+from .constants import DEFAULT_INDIVIDUAL_COLOR, Sex
+from .utils import calculate_text_size, strip_name
+
+if TYPE_CHECKING:
+    from .pedigree import Pedigree
+    from .family import Family
 
 logger = logging.getLogger("genoplot")
 
 
 class Individual:
-    def __init__(self, individual, pedigree=None, output_fields=None, font_size=10, **kwargs):
+    """Represents an individual person in a pedigree.
+
+    Attributes:
+        id: Unique identifier for the individual.
+        name: Full name of the individual.
+        first: First name.
+        last: Last name.
+        sex: Biological sex (M/F/U).
+        birth: Birth date in ISO format (YYYY-MM-DD).
+        death: Death date in ISO format (YYYY-MM-DD).
+        mother: ID of mother individual, if known.
+        father: ID of father individual, if known.
+        x: X coordinate for graph layout.
+        y: Y coordinate for graph layout.
+        width: Calculated width for display.
+        height: Calculated height for display.
+    """
+
+    def __init__(
+        self,
+        individual: Any,
+        pedigree: Optional['Pedigree'] = None,
+        output_fields: Optional[list[str]] = None,
+        font_size: int = 10,
+        **kwargs: Any
+    ) -> None:
+        """Initialize an Individual.
+
+        Args:
+            individual: Raw GEDCOM parsed individual object.
+            pedigree: Pedigree object to which individual belongs.
+            output_fields: List of field names to include in output text.
+            font_size: Font size for text rendering.
+            **kwargs: Additional attributes to set on the individual.
         """
-        Individual - defines a  in a pedigree
-        :param individual: Raw Gedcom parsed individual
-        :type individual: object
-        :param pedigree: Pedigree object to which individual belongs
-        :type pedigree: object
-        :param output_fields: Fields to show
-        :type output_fields: list
-        """
-        self._raw = individual
-        self._pedigree = pedigree
-        self.x = 0
-        self.y = 0
-        self.name = ""
-        self._color = "#F2E6D2"
-        self._coordinates = set()
-        if output_fields is None:
-            self._output_fields = [
-                "layout_branch", "layout_number", "layout_family",
-                "layout_ancestor", "layout_prelims", "layout_shifts",
-                "layout_mods", "id", "name"
-            ]
-        else:
-            self._output_fields = output_fields
+        self._raw: Any = individual
+        self._pedigree: Optional['Pedigree'] = pedigree
+        self.x: float = 0.0
+        self.y: float = 0.0
+        self.name: str = ""
+        self._color: str = DEFAULT_INDIVIDUAL_COLOR
+        self._coordinates: Set[Tuple[float, float]] = set()
+        self._output_fields: list[str] = output_fields or [
+            "layout_branch", "layout_number", "layout_family",
+            "layout_ancestor", "layout_prelims", "layout_shifts",
+            "layout_mods", "id", "name"
+        ]
 
-        self._font_size = font_size
+        self._font_size: int = font_size
 
-        self.layout_number = 0
-        self.layout_prelim = 0
-        self.layout_mod = 0
-        self.layout_change = 0
-        self.layout_shift = 0
-        self.layout_thread = None
-        self.layout_ancestor = None
-        self.layout_family = None
-        self.layout_branch = None
+        # Layout properties
+        self.layout_number: int = 0
+        self.layout_prelim: float = 0.0
+        self.layout_mod: float = 0.0
+        self.layout_change: float = 0.0
+        self.layout_shift: float = 0.0
+        self.layout_thread: Optional[Any] = None
+        self.layout_ancestor: Optional[Any] = None
+        self.layout_family: Optional[Any] = None
+        self.layout_branch: Optional[int] = None
 
+        # Set additional keyword arguments
         for k, v in kwargs.items():
             setattr(self, k, v)
 
         self._setup()
+        self.width: float
+        self.height: float
         self.width, self.height = self.size()
 
-    def _setup(self):
-        self.id = int(self._raw.id.replace("@", "").replace("P", ""))
+    def _setup(self) -> None:
+        """Set up individual attributes from raw GEDCOM data."""
+        self.id: int = int(self._raw.id.replace("@", "").replace("P", ""))
+        self.first: Optional[str]
+        self.last: Optional[str]
         self.first, self.last = self._raw.name
-        if self.last is not None:
-            name = self.last
-        else:
-            name = ""
+
+        # Build full name
+        name = self.last if self.last is not None else ""
         if self.first is not None and len(self.first) > 0:
-            name = self.first + " " + name
+            name = f"{self.first} {name}"
 
-        self.name = stripName(name)
-        self.first = stripName(self.first)
-        self.last = stripName(self.last)
+        self.name = strip_name(name) or ""
+        self.first = strip_name(self.first)
+        self.last = strip_name(self.last)
 
-        try:
-            self.sex = self._raw.sex
-        except AttributeError:
-            self.sex = "U"
+        # Use getattr for safer attribute access
+        self.sex: str = getattr(self._raw, 'sex', Sex.UNKNOWN.value)
 
-        try:
+        # Handle mother and father references
+        self.mother: Optional[int] = None
+        if hasattr(self._raw, 'mother') and self._raw.mother:
             self.mother = int(self._raw.mother.id.replace("@", "").replace("P", ""))
-        except AttributeError:
-            self.mother = None
 
-        try:
+        self.father: Optional[int] = None
+        if hasattr(self._raw, 'father') and self._raw.father:
             self.father = int(self._raw.father.id.replace("@", "").replace("P", ""))
-        except AttributeError:
-            self.father = None
 
         try:
             if isinstance(self._raw.birth, list):
@@ -141,38 +174,75 @@ class Individual:
             self.deathDate = None
             self.deathPlace = None
 
-        self._customAttrs = []
+        self._customAttrs: list[Any] = []
 
-    def is_parent(self):
-        """Returns whether individual is a parent in this pedigree"""
+    def __repr__(self) -> str:
+        """Return detailed string representation of Individual."""
+        return (
+            f"Individual(id={self.id}, name={self.name!r}, "
+            f"sex={self.sex!r}, birth={self.birth!r}, death={self.death!r})"
+        )
+
+    def __str__(self) -> str:
+        """Return human-readable string representation."""
+        return f"{self.name} (ID: {self.id})"
+
+    def is_parent(self) -> bool:
+        """Check if individual is a parent in this pedigree.
+
+        Returns:
+            True if individual is a parent, False otherwise.
+
+        Raises:
+            ValueError: If pedigree is not defined.
+        """
         if self._pedigree is None:
-            raise Exception("Pedigree is not defined")
+            raise ValueError("Pedigree is not defined")
         return self._pedigree.is_parent(self.id)
 
-    def is_child(self):
-        """Returns whether individual is a child in this pedigree"""
+    def is_child(self) -> bool:
+        """Check if individual is a child in this pedigree.
+
+        Returns:
+            True if individual is a child, False otherwise.
+
+        Raises:
+            ValueError: If pedigree is not defined.
+        """
         if self._pedigree is None:
-            raise Exception("Pedigree is not defined")
+            raise ValueError("Pedigree is not defined")
         return self._pedigree.is_child(self.id)
 
-    def families(self, role="parent"):
-        """Returns families in which individual belongs
+    def families(self, role: str = "parent") -> list['Family']:
+        """Get families in which individual belongs.
 
-        :param role: Role in family
-        :type: str
+        Args:
+            role: Role in family ('parent', 'child', or 'any').
+
+        Returns:
+            List of Family objects.
+
+        Raises:
+            ValueError: If pedigree is not defined.
         """
         if self._pedigree is None:
-            raise Exception("Pedigree is not defined")
+            raise ValueError("Pedigree is not defined")
         return self._pedigree.individual_families(self.id, role)
 
-    def size(self):
-        """
-        Returns label size of indivdual at the font size specified during object creation
+    def size(self) -> Tuple[float, float]:
+        """Calculate display size based on output text.
+
+        Returns:
+            Tuple of (width, height) in pixels.
         """
         return calculate_text_size(self.output_text(), self._font_size)
 
-    def output_text(self):
-        """Text to print on pedigree"""
+    def output_text(self) -> Generator[str, None, None]:
+        """Generate text lines to print on pedigree.
+
+        Yields:
+            String values for each output field.
+        """
         families = self.families()
         self.layout_prelims = ["Prelim", int(self.layout_prelim)]
         self.layout_shifts = ["Shift", int(self.layout_shift)]
@@ -192,17 +262,37 @@ class Individual:
                 self.layout_mods.append(int(fam.layout_mod))
         return (str(getattr(self, k)) for k in self._output_fields)
 
-    def color(self):
-        """Returns color to draw the individual on the pedigree"""
+    @property
+    def color(self) -> str:
+        """Get color to draw the individual on the pedigree.
+
+        Returns:
+            Hex color code as string.
+        """
         return self._color
 
-    def set_coordinates(self, x, y, add_to_history=True):
-        """Sets x coordinate with history"""
+    def set_coordinates(
+        self,
+        x: float,
+        y: float,
+        add_to_history: bool = True
+    ) -> None:
+        """Set individual's coordinates.
+
+        Args:
+            x: X coordinate.
+            y: Y coordinate.
+            add_to_history: Whether to add coordinates to history.
+        """
         self.x = x
         self.y = y
         if add_to_history:
             self._coordinates.add((x, y))
 
-    def coordinate_history(self):
-        """Returns all coordinates specified for individual"""
+    def coordinate_history(self) -> Set[Tuple[float, float]]:
+        """Get all historical coordinates for this individual.
+
+        Returns:
+            Set of (x, y) coordinate tuples.
+        """
         return self._coordinates
