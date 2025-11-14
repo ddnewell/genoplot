@@ -9,6 +9,7 @@
 import copy
 import logging
 import time
+from collections import defaultdict
 from typing import Any, Optional, Union
 
 import gedcom
@@ -43,6 +44,10 @@ class Pedigree:
         self._families = {}
         self._parent_ids = set()
         self._children_ids = set()
+
+        # Performance optimization: maintain indices for O(1) family lookups
+        self._parent_to_families: dict[int, list[int]] = defaultdict(list)
+        self._child_to_families: dict[int, list[int]] = defaultdict(list)
 
         self._font_size = font_size
         self._hmargin = hmargin
@@ -85,8 +90,10 @@ class Pedigree:
             self._families[f.id] = f
             for id in f.parent_ids():
                 self._parent_ids.add(id)
+                self._parent_to_families[id].append(f.id)
             for id in f.children_ids():
                 self._children_ids.add(id)
+                self._child_to_families[id].append(f.id)
         logger.info(f"Processing families took {time.time()-start:.4f}s")
         logger.info(
             f"Parsing GEDCOM complete: {len(self._individuals)} individuals "
@@ -142,19 +149,31 @@ class Pedigree:
             return self._individuals[pid]
 
     def individual_families(self, pid: int, role: str = "parent") -> list[Family]:
-        """Returns families in which specified individual ID belongs
+        """Returns families in which specified individual ID belongs.
 
-        :param pid: Individual ID
-        :type pid: int
-        :param role: Role in family
-        :type: str
+        Uses O(1) index lookups for performance.
+
+        Args:
+            pid: Individual ID.
+            role: Role in family ("parent", "child", or any other value for both).
+
+        Returns:
+            List of Family objects containing the individual.
         """
         if role == "parent":
-            return [family for family in self._families.values() if family.contains_parent(pid)]
+            # O(1) lookup using index
+            family_ids = self._parent_to_families.get(pid, [])
+            return [self._families[fid] for fid in family_ids if fid in self._families]
         elif role == "child":
-            return [family for family in self._families.values() if family.contains_child(pid)]
+            # O(1) lookup using index
+            family_ids = self._child_to_families.get(pid, [])
+            return [self._families[fid] for fid in family_ids if fid in self._families]
         else:
-            return [family for family in self._families.values() if pid in family]
+            # Combine both indices
+            parent_fids = set(self._parent_to_families.get(pid, []))
+            child_fids = set(self._child_to_families.get(pid, []))
+            all_fids = parent_fids | child_fids
+            return [self._families[fid] for fid in all_fids if fid in self._families]
 
     def family(self, fid: int) -> Optional[Family]:
         """Returns family for specified family ID
