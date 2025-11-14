@@ -6,51 +6,109 @@
 # into with Welded Anvil Technologies (David D. Newell).
 # @author david@newell.at
 
-import logging, itertools, svgwrite, time
+"""GenoPlot class for creating pedigree visualizations."""
+
+import itertools
+import logging
+import time
+from pathlib import Path
+from typing import Optional, Tuple, Union
+
 import networkx as nx
+import svgwrite
+
+from .constants import (
+    DEFAULT_FONT_SIZE,
+    DEFAULT_HMARGIN,
+    DEFAULT_PAGE_MARGIN,
+    DEFAULT_SYMBOL_SIZE,
+    DUPLICATE_CONNECTOR_COLOR,
+    MAX_OVERLAP_ITERATIONS,
+    OVERLAP_ADJUSTMENT_STEP,
+)
+from .exceptions import GedcomParseError, InvalidParameterError
 from .family import Family
 from .familygraph import FamilyGraph
 from .pedigree import Pedigree
 from .utils import calculate_text_size
+
 logger = logging.getLogger("genoplot")
 
 
-class GenoPlot(object):
-    def __init__(self,
-                name,
-                gedcom_file,
-                output_file=None,
-                font_size=10,
-                hmargin=20,
-                symbol_size=25,
-                page_margin=100
-                ):
-        """
-        GenoPlot - defines a pedigree plot based on specified gedcom file
+class GenoPlot:
+    """Create and render pedigree plots from GEDCOM files.
 
-        :param name: Plot name/title
-        :type name: str
-        :param gedcom_file: GEDCOM file path
-        :type gedcom_file: str
+    Attributes:
+        name: Plot name/title.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        gedcom_file: Union[str, Path],
+        output_file: Optional[Union[str, Path]] = None,
+        font_size: int = DEFAULT_FONT_SIZE,
+        hmargin: int = DEFAULT_HMARGIN,
+        symbol_size: int = DEFAULT_SYMBOL_SIZE,
+        page_margin: int = DEFAULT_PAGE_MARGIN
+    ) -> None:
+        """Initialize a GenoPlot.
+
+        Args:
+            name: Plot name/title.
+            gedcom_file: Path to GEDCOM file.
+            output_file: Output SVG file path. Defaults to {name}.svg.
+            font_size: Font size for text rendering.
+            hmargin: Horizontal margin between elements.
+            symbol_size: Size of individual symbols.
+            page_margin: Margin around the page.
+
+        Raises:
+            GedcomParseError: If GEDCOM file does not exist or cannot be read.
+            InvalidParameterError: If any numeric parameter is not positive.
         """
-        logger.info("Creating GenoPlot named '%s' from GEDCOM '%s'", name, gedcom_file)
-        self.name = name
-        self._pedigree = Pedigree(name, gedcom_file, font_size=font_size, hmargin=hmargin)
+        # Validate numeric parameters
+        if font_size <= 0:
+            raise InvalidParameterError("font_size", font_size, "must be positive")
+        if hmargin < 0:
+            raise InvalidParameterError("hmargin", hmargin, "must be non-negative")
+        if symbol_size <= 0:
+            raise InvalidParameterError("symbol_size", symbol_size, "must be positive")
+        if page_margin < 0:
+            raise InvalidParameterError("page_margin", page_margin, "must be non-negative")
+
+        # Validate GEDCOM file exists
+        gedcom_path = Path(gedcom_file)
+        if not gedcom_path.exists():
+            raise GedcomParseError(f"GEDCOM file not found: {gedcom_path}")
+        if not gedcom_path.is_file():
+            raise GedcomParseError(f"Path is not a file: {gedcom_path}")
+
+        logger.info(f"Creating GenoPlot named '{name}' from GEDCOM '{gedcom_path}'")
+
+        self.name: str = name
+        self._pedigree: Pedigree = Pedigree(
+            name, str(gedcom_path), font_size=font_size, hmargin=hmargin
+        )
+
+        # Set output file path
         if output_file is None:
-            self._output_file = "{0}.svg".format(self.name)
+            self._output_file = Path(f"{self.name}.svg")
         else:
-            self._output_file = output_file
-        if ".svg" not in self._output_file:
-            self._output_file += ".svg"
-        self._graph = None
+            self._output_file = Path(output_file)
+
+        if self._output_file.suffix != ".svg":
+            self._output_file = self._output_file.with_suffix(".svg")
+
+        self._graph: Optional[FamilyGraph] = None
         self._layout = None
-        self._font_size = font_size
-        self._symbol_size = symbol_size
-        self._hmargin = hmargin
-        self._node_height = self._symbol_size*2#*6
-        self._page_margin = page_margin
-        self._connectors = []
-        self._image_layers = {
+        self._font_size: int = font_size
+        self._symbol_size: int = symbol_size
+        self._hmargin: int = hmargin
+        self._node_height: int = self._symbol_size * 2
+        self._page_margin: int = page_margin
+        self._connectors: list[Tuple[Tuple[float, float], Tuple[float, float]]] = []
+        self._image_layers: dict[str, list] = {
             "-1:duplicates": [],
             "0:connectors": [],
             "1:individuals": [],
@@ -58,19 +116,33 @@ class GenoPlot(object):
             "3:textextent": []
         }
 
-    def draw(self):
-        """Draws pedigree plot based on specified parameters"""
+    def __repr__(self) -> str:
+        """Return string representation of GenoPlot."""
+        return (
+            f"GenoPlot(name={self.name!r}, "
+            f"output_file={str(self._output_file)!r})"
+        )
+
+    def draw(self) -> None:
+        """Draw pedigree plot and save to output file."""
         logger.info("Starting plot draw")
         draw_start = time.time()
-        self._graph = FamilyGraph(self._pedigree,
-                                    font_size=self._font_size,
-                                    hmargin=self._hmargin,
-                                    node_height=self._node_height,
-                                    page_margin=self._page_margin)
+        self._graph = FamilyGraph(
+            self._pedigree,
+            font_size=self._font_size,
+            hmargin=self._hmargin,
+            node_height=self._node_height,
+            page_margin=self._page_margin
+        )
 
         extremes = self._graph.extremes()
-        self._svg = svgwrite.Drawing(filename=self._output_file,
-                                    size=(extremes[1]+self._page_margin*2, extremes[3]*1.2+self._page_margin*2))
+        self._svg = svgwrite.Drawing(
+            filename=str(self._output_file),
+            size=(
+                extremes[1] + self._page_margin * 2,
+                extremes[3] * 1.2 + self._page_margin * 2
+            )
+        )
 
         # for vid, loc in self._layout.items():
         for vid, d in self._graph.items():
@@ -148,34 +220,35 @@ class GenoPlot(object):
                     self._draw_connector_to_multiple(start, targets)
 
         # Draw duplicate people connectors
-        [self._draw_duplicate_person_link(individual) for individual in self._graph.duplicate_individuals()]
+        for individual in self._graph.duplicate_individuals():
+            self._draw_duplicate_person_link(individual)
 
         # Draw connectors between added duplicate nodes
         for (nid1, nid2) in self._graph.branch_links():
             individual = self._pedigree.individual(nid1)
-            if not individual.x is None and not individual.y is None:
+            if individual.x is not None and individual.y is not None:
                 start = (individual.x, individual.y)
             else:
-                logger.warn("Coordinates not persisted to %i", individual.id)
-                # start = self._layout["P{0}".format(individual.id)]
+                logger.warning(f"Coordinates not persisted to {individual.id}")
             duplicate = self._pedigree.individual(nid2)
-            if not duplicate.x is None and not duplicate.y is None:
+            if duplicate.x is not None and duplicate.y is not None:
                 end = (duplicate.x, duplicate.y)
             else:
-                logger.warn("Coordinates not persisted to %i", duplicate.id)
-                # end = self._layout["P{0}".format(duplicate.id)]
-            logger.debug("Drawing added duplicate node connector: %s %s", start, end)
+                logger.warning(f"Coordinates not persisted to {duplicate.id}")
+            logger.debug(f"Drawing added duplicate node connector: {start} {end}")
             self._draw_duplicate_connector(individual.sex, start, end)
 
         # Add cached drawing items to image
-        [self._svg.add(item) for layer in sorted(self._image_layers) for item in self._image_layers[layer]]
+        for layer in sorted(self._image_layers):
+            for item in self._image_layers[layer]:
+                self._svg.add(item)
         # Save image
         self._svg.save()
-        logger.info("Plot draw complete, took %.2fs", time.time() - draw_start)
+        logger.info(f"Plot draw complete, took {time.time() - draw_start:.2f}s")
 
     def _draw_family(self, fid, x, y):
         """Draws family on drawing"""
-        logger.debug("Drawing family %s at (%.1f, %.1f)", fid, x, y)
+        logger.debug(f"Drawing family {fid} at ({x:.1f}, {y:.1f})")
         family = self._pedigree.family(fid)
         # family.set_coordinates(x, y)
         father = family.father()
@@ -190,20 +263,22 @@ class GenoPlot(object):
         if mother is None:
             # Draw virtual mother
             if father is None:
-                logger.warn("Family %s has no parents: drawing both virtual mother and father", fid)
+                logger.warning(
+                    f"Family {fid} has no parents: drawing both virtual mother and father"
+                )
                 fwidth = self._hmargin
             else:
                 fwidth = calculate_text_size(father.output_text(), self._font_size)[0]
             mwidth = self._symbol_size
-            mx = x + self._hmargin*2+fwidth/2+mwidth/2
+            mx = x + self._hmargin*2 + fwidth/2 + mwidth/2
             self._draw_virtual_individual("F", mx, y)
-            end = (mx+self._symbol_size/2, y+self._symbol_size/2)
+            end = (mx + self._symbol_size/2, y + self._symbol_size/2)
         else:
             self._draw_individual(mother.id, mother.x, mother.y)
-            end = (mother.x+self._symbol_size/2, y+self._symbol_size/2)
+            end = (mother.x + self._symbol_size/2, y + self._symbol_size/2)
 
         # Draw connector between parents
-        start = (x+self._symbol_size, y+self._symbol_size/2)
+        start = (x + self._symbol_size, y + self._symbol_size/2)
         self._draw_connector(start, end)
 
     def _draw_virtual_individual(self, sex, x, y):
@@ -277,7 +352,7 @@ class GenoPlot(object):
             )
 
 
-            logger.debug("Text %s has width %.2f and height %.2f", text, text_width, text_height)
+            logger.debug(f"Text {text} has width {text_width:.2f} and height {text_height:.2f}")
             text_y += text_height
 
     def _detect_straight_connector_overlap(self, x1, y1, x2, y2, fid=None):
@@ -302,10 +377,13 @@ class GenoPlot(object):
             y -= 8
             i += 1
             if i > 100:
-                logger.error("Drawing overlapping connector. Iterated 100 times and could not find open space on layout. X1: %i Y1: %i X2: %i Y2: %i", x1, y1, x2, y2)
+                logger.error(
+                    f"Drawing overlapping connector. Iterated 100 times and could not "
+                    f"find open space on layout. X1: {x1} Y: {y} X2: {x2}"
+                )
                 break
         if i > 0:
-            logger.debug("Detected overlapping connector. Iterating %i times", i)
+            logger.debug(f"Detected overlapping connector. Iterating {i} times")
         return y
 
     def _draw_connector_to_multiple(self, start, targets):
@@ -329,7 +407,10 @@ class GenoPlot(object):
 
         middle_y = self._find_nonoverlapping_y(min_x, max_x, max_y - self._symbol_size)
 
-        logger.debug("Drawing connector to multiple targets (%i). Max_X: %i Min_X: %i Max_Y: %i Min_Y: %i Middle_Y: %i", len(targets), max_x, min_x, max_y, min_y, middle_y)
+        logger.debug(
+            f"Drawing connector to multiple targets ({len(targets)}). "
+            f"Max_X: {max_x} Min_X: {min_x} Max_Y: {max_y} Min_Y: {min_y} Middle_Y: {middle_y}"
+        )
 
         # Draw vertical section from start
         self._draw_connector(start, (start_x, middle_y))
@@ -401,16 +482,23 @@ class GenoPlot(object):
         coords = individual.coordinate_history()
 
         if len(coords) < 2:
-            logger.warn("Individual %i - %s marked as duplicate but only has %i coordinates", individual.id, individual.name, len(coords))
+            logger.warning(
+                f"Individual {individual.id} - {individual.name} marked as duplicate "
+                f"but only has {len(coords)} coordinates"
+            )
             return
         elif len(coords) > 2:
             coords = itertools.combinations(coords, 2)
         else:
             coords = [coords]
 
-        logger.debug("Drawing duplicate person link for %s - coords: %s", individual.name, ", ".join(repr(c) for c in coords))
+        logger.debug(
+            f"Drawing duplicate person link for {individual.name} - "
+            f"coords: {', '.join(repr(c) for c in coords)}"
+        )
 
-        [self._draw_duplicate_connector(individual.sex, start, end) for (start, end) in coords]
+        for (start, end) in coords:
+            self._draw_duplicate_connector(individual.sex, start, end)
 
     def _draw_duplicate_connector(self, sex, start, end):
         """Draws connector between specified coordinates"""
