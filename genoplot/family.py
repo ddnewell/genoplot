@@ -9,9 +9,10 @@
 """Family class for representing family units in a pedigree."""
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Tuple, Union
 
 from .constants import DEFAULT_HMARGIN
+from .exceptions import GedcomParseError
 from .utils import calculate_text_size
 
 if TYPE_CHECKING:
@@ -78,12 +79,20 @@ class Family:
         self.height: float
         self.width, self.height = self.size()
 
-    def _setup(self):
-        self.id = int(self._raw.id.replace("@", "").replace("F", ""))
+    def _setup(self) -> None:
+        try:
+            self.id = int(self._raw.id.replace("@", "").replace("F", ""))
+        except (ValueError, AttributeError) as e:
+            raise GedcomParseError(f"Invalid family ID format: {self._raw.id}") from e
+
         self._parent_ids = []
         self._children_ids = []
         for person in self._raw.partners:
-            pid = int(person.value.replace("@", "").replace("P", ""))
+            try:
+                pid = int(person.value.replace("@", "").replace("P", ""))
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Invalid partner ID format: {person.value} - {e}")
+                continue
             self._parent_ids.append(pid)
             if person.tag == "HUSB":
                 self._father = pid
@@ -92,14 +101,27 @@ class Family:
 
         for el in self._raw.child_elements:
             if el.tag == "CHIL":
-                pid = int(el.value.replace("@", "").replace("P", ""))
+                try:
+                    pid = int(el.value.replace("@", "").replace("P", ""))
+                except (ValueError, AttributeError) as e:
+                    logger.warning(f"Invalid child ID format: {el.value} - {e}")
+                    continue
                 self._children_ids.append(pid)
         self._sort_children()
 
-    def _sort_children(self):
+    def _sort_children(self) -> None:
+        """Sort children by birth date."""
         self._children_ids.sort(key=self._sort_by_birth)
 
-    def _sort_by_birth(self, cid):
+    def _sort_by_birth(self, cid: int) -> Union[int, Any]:
+        """Get birth date for sorting children.
+
+        Args:
+            cid: Child individual ID.
+
+        Returns:
+            Birth date object or 0 if birth date is unavailable.
+        """
         child = self._pedigree.individual(cid)
         if cid is None or child is None:
             logger.critical(

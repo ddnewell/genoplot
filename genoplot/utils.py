@@ -17,6 +17,7 @@ from .constants import (
     TEXT_WIDTH_ADJUSTMENT,
     TEXT_WIDTH_THRESHOLD,
 )
+from .exceptions import InvalidParameterError
 
 logger = logging.getLogger("genoplot")
 
@@ -40,7 +41,13 @@ def calculate_text_size(
         (31.2, 14.4)
         >>> calculate_text_size(["Line 1", "Line 2"], 10)
         (31.2, 24.0)
+
+    Raises:
+        InvalidParameterError: If font_size is not positive.
     """
+    if font_size <= 0:
+        raise InvalidParameterError("font_size", font_size, "must be positive")
+
     if isinstance(text, str):
         text = [text]
 

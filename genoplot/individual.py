@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Generator, Optional, Set, Tuple
 import dateparser
 
 from .constants import DEFAULT_INDIVIDUAL_COLOR, Sex
+from .exceptions import GedcomParseError
 from .utils import calculate_text_size, strip_name
 
 if TYPE_CHECKING:
@@ -96,7 +97,10 @@ class Individual:
 
     def _setup(self) -> None:
         """Set up individual attributes from raw GEDCOM data."""
-        self.id: int = int(self._raw.id.replace("@", "").replace("P", ""))
+        try:
+            self.id: int = int(self._raw.id.replace("@", "").replace("P", ""))
+        except (ValueError, AttributeError) as e:
+            raise GedcomParseError(f"Invalid individual ID format: {self._raw.id}") from e
         self.first: Optional[str]
         self.last: Optional[str]
         self.first, self.last = self._raw.name

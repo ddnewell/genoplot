@@ -9,9 +9,11 @@
 import copy
 import logging
 import time
+from typing import Any, Optional, Union
 
 import gedcom
 
+from .exceptions import FamilyNotFoundError, IndividualNotFoundError
 from .family import Family
 from .individual import Individual
 
@@ -19,7 +21,14 @@ logger = logging.getLogger("genoplot")
 
 
 class Pedigree:
-    def __init__(self, name, gedcom_file, font_size=10, hmargin=0, **kwargs):
+    def __init__(
+        self,
+        name: str,
+        gedcom_file: str,
+        font_size: int = 10,
+        hmargin: int = 0,
+        **kwargs: Any
+    ) -> None:
         """
         Pedigree - defines a pedigree built from a gedcom file
 
@@ -43,14 +52,17 @@ class Pedigree:
 
         self._setup()
 
-    def _setup(self):
+    def _setup(self) -> None:
         logger.debug("Processing individuals in GEDCOM")
         start = time.time()
         for individual in self._gedcom.individuals:
             try:
                 i = Individual(individual, self, font_size=self._font_size)
-            except Exception:
-                logger.warn("Error adding individual: %s", individual)
+            except (ValueError, AttributeError, IndexError, TypeError) as e:
+                logger.warning(f"Error adding individual: {individual} - {e}")
+                continue
+            except Exception as e:
+                logger.error(f"Unexpected error adding individual: {individual} - {e}")
                 continue
 
             logger.debug(f"Adding individual: {i.name}")
@@ -62,8 +74,11 @@ class Pedigree:
         for family in self._gedcom.families:
             try:
                 f = Family(family, self, font_size=self._font_size, hmargin=self._hmargin)
-            except Exception:
-                logger.warning(f"Error adding family: {family}")
+            except (ValueError, AttributeError, IndexError, TypeError) as e:
+                logger.warning(f"Error adding family: {family} - {e}")
+                continue
+            except Exception as e:
+                logger.error(f"Unexpected error adding family: {family} - {e}")
                 continue
 
             logger.debug(f"Adding family: {f.id}")
@@ -78,15 +93,19 @@ class Pedigree:
             f"and {len(self._families)} families found"
         )
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Returns number of individuals in pedigree"""
         return len(self._individuals)
 
-    def duplicate_individual(self, individual):
+    def duplicate_individual(self, individual: Individual) -> Individual:
         """Creates and returns duplicate of supplied individual"""
         if individual.id in self._individuals:
             duplicate = copy.copy(individual)
-            duplicate.id = max(self._individuals) + 1
+            # Handle empty pedigree case
+            if self._individuals:
+                duplicate.id = max(self._individuals) + 1
+            else:
+                duplicate.id = 1
             self._individuals[duplicate.id] = duplicate
             for family in self.individual_families(individual.id, role="child"):
                 family.add_child(duplicate.id)
@@ -102,15 +121,15 @@ class Pedigree:
             )
             return copy.copy(individual)
 
-    def is_parent(self, pid):
+    def is_parent(self, pid: int) -> bool:
         """Returns whether specified individual ID is a parent in a family in this pedigree"""
         return pid in self._parent_ids
 
-    def is_child(self, pid):
+    def is_child(self, pid: int) -> bool:
         """Returns whether specified individual ID is a child in a family in this pedigree"""
         return pid in self._children_ids
 
-    def individual(self, pid):
+    def individual(self, pid: int) -> Optional[Individual]:
         """Returns individual for specified individual ID
 
         :param pid: Individual ID
@@ -122,7 +141,7 @@ class Pedigree:
         else:
             return self._individuals[pid]
 
-    def individual_families(self, pid, role="parent"):
+    def individual_families(self, pid: int, role: str = "parent") -> list[Family]:
         """Returns families in which specified individual ID belongs
 
         :param pid: Individual ID
@@ -137,7 +156,7 @@ class Pedigree:
         else:
             return [family for family in self._families.values() if pid in family]
 
-    def family(self, fid):
+    def family(self, fid: int) -> Optional[Family]:
         """Returns family for specified family ID
 
         :param fid: Family ID
@@ -148,7 +167,7 @@ class Pedigree:
         else:
             return self._families[fid]
 
-    def families_with_parent(self, parents=None):
+    def families_with_parent(self, parents: Optional[Union[int, list[int]]] = None) -> list[Family]:
         """Returns families with parent IDs specified
 
         :param parents: Parent(s) to find in family
@@ -173,9 +192,9 @@ class Pedigree:
         else:
             return []
 
-    def vertices(self):
+    def vertices(self) -> list[Union[Family, Individual]]:
         """Returns families and individuals who comprise all vertices in family tree plot"""
-        vertices = list(self._families.values())
+        vertices: list[Union[Family, Individual]] = list(self._families.values())
         individual_keys = [individual for individual in self._individuals.values() if not individual.is_parent()]
         vertices.extend(individual_keys)
         return vertices

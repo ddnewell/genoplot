@@ -8,14 +8,11 @@
 
 import itertools
 import logging
-import sys
 import time
-import traceback
 
 import networkx as nx
-import pygraphviz
 
-from . import buchheim
+from .exceptions import InvalidLayoutError
 from .family import Family
 from .pedigree import Pedigree
 from .utils import calculate_text_size
@@ -58,8 +55,9 @@ class Branch:
                 v = vid
                 break
         if v is None:
-            logger.critical(f"Could not find parent node to layout branch {self.id}: stopping")
-            exit(1)
+            error_msg = f"Could not find parent node to layout branch {self.id}"
+            logger.critical(error_msg)
+            raise InvalidLayoutError(error_msg)
 
         post_order = list(nx.dfs_postorder_nodes(self._graph, v))
 
@@ -153,11 +151,12 @@ class Branch:
             tgt_father = tgt.father()
             tgt_mother = tgt.mother()
             if tgt_father is None and tgt_mother is None:
-                logger.critical(
+                error_msg = (
                     f"Empty parents found in family while sorting children; "
                     f"cannot continue, family ID: {tgt.id}"
                 )
-                exit(1)
+                logger.critical(error_msg)
+                raise InvalidLayoutError(error_msg)
 
             if tgt_father is None and tgt_mother is not None:
                 return self._reconcile_birth_date(tgt_mother.birth)

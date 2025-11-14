@@ -26,6 +26,7 @@ from .constants import (
     MAX_OVERLAP_ITERATIONS,
     OVERLAP_ADJUSTMENT_STEP,
 )
+from .exceptions import GedcomParseError, InvalidParameterError
 from .family import Family
 from .familygraph import FamilyGraph
 from .pedigree import Pedigree
@@ -61,8 +62,28 @@ class GenoPlot:
             hmargin: Horizontal margin between elements.
             symbol_size: Size of individual symbols.
             page_margin: Margin around the page.
+
+        Raises:
+            GedcomParseError: If GEDCOM file does not exist or cannot be read.
+            InvalidParameterError: If any numeric parameter is not positive.
         """
+        # Validate numeric parameters
+        if font_size <= 0:
+            raise InvalidParameterError("font_size", font_size, "must be positive")
+        if hmargin < 0:
+            raise InvalidParameterError("hmargin", hmargin, "must be non-negative")
+        if symbol_size <= 0:
+            raise InvalidParameterError("symbol_size", symbol_size, "must be positive")
+        if page_margin < 0:
+            raise InvalidParameterError("page_margin", page_margin, "must be non-negative")
+
+        # Validate GEDCOM file exists
         gedcom_path = Path(gedcom_file)
+        if not gedcom_path.exists():
+            raise GedcomParseError(f"GEDCOM file not found: {gedcom_path}")
+        if not gedcom_path.is_file():
+            raise GedcomParseError(f"Path is not a file: {gedcom_path}")
+
         logger.info(f"Creating GenoPlot named '{name}' from GEDCOM '{gedcom_path}'")
 
         self.name: str = name
